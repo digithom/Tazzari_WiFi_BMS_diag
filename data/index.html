@@ -1,0 +1,420 @@
+<HTML>
+	<HEAD>
+		<TITLE>Pressurizzazione Acqua</TITLE>
+	</HEAD>
+<BODY>
+	<CENTER>
+		<B>Gestione Pressostato </B>
+
+		<br>
+		<br>
+		<style>
+			table {
+				border-spacing: 1em .2em;
+				  padding: 0 2em 1em 0;
+<!--				    border: 1px solid orange; -->
+			}
+			tr {
+				width: 1.5em;
+				  height: 1.5em;
+<!--				    background: #d2d2d2; -->
+					  text-align: center;
+					    vertical-align: middle;
+			}
+		</style>
+		<table style="width:40%">
+				<tr>
+						<td colspan="1">
+							<table>
+								<tr><td><button id="cmd_disable" type="button" onclick="cmdSpegni()" style="font-size: 2em; ">Disabilita</button></tr></td>
+								 <tr><td><button id="cmd_enable" type="button" onclick="cmdAccendi()"style="font-size: 2em; ">Abilita</button></td></tr>
+								 <tr><td><button id="cmd_load" type="button" onclick="cmdCarica()"style="font-size: 2em; ">Carica</button></td></tr>
+							</table>
+						</td>
+						<td colspan="1"></td>
+						<td colspan="4">
+							<table>
+								<tr>
+									<td colspan="1" style="font-size: 1em; font-weight: bold" valign="top">Sorgente&nbsp&nbsp</td> 
+									<td colspan="1" style="font-size: 4em; font-weight: bold" valign="bottom" id="sorgente">Undefined</td> 
+								 	<td><button id="cmd_src_change" type="button" onclick="cmdSourceCHG()"style="font-size: 2em; ">Cambia</button></td>
+								</tr>
+								<tr>
+									<td colspan="2" style="font-size: 4em; font-weight: bold" valign="bottom">Pressione&nbsp&nbsp</td> 
+									<td colspan="1" style="font-size: 4em; font-weight: bold" valign="bottom" id="pressione">0</td> 
+								</tr>
+							</table>
+						</td>
+<!--						<td colspan="1" style="font-size: 4em; font-weight: bold" valign="bottom">Pressione&nbsp&nbsp</td> -->
+<!--						<td colspan="3" style="font-size: 4em; font-weight: bold" valign="bottom" id="pressione">0</td> -->
+						<td colspan="1" style="font-size: 1em; font-weight: bold" id="status">Undefined</td>
+				</tr>
+				<tr>
+						<td colspan="1" align="center" id="stop_reason" style="font-weight: bold">Not received</td>
+						<td colspan="6">
+						  <table>
+							<tr>
+							  <td width="120px" align="right">P.Target&nbsp&nbsp</td>
+							  <td width="70px" align="left" id="ptarget" style="font-weight: bold">0</td>
+							  <td width="120px" align="right">P.Start&nbsp&nbsp</td>
+							  <td width="70px" align="left" id="pmin" style="font-weight: bold">0</td>
+							  <td width="120px" align="right">P.Stop&nbsp&nbsp</td>
+							  <td width="70px" align="left" id="pmax" style="font-weight: bold">0</td>
+							  <td width="120px" align="right">P.+5sec&nbsp&nbsp</td>
+							  <td width="70px" align="left" id="p5sec" style="font-weight: bold">0</td>
+							</tr>
+						  </table>
+						</td>
+				</tr>
+			<tr>
+				<td colspan="2"></td>
+				<td colspan="2" width="120px" align="right">Tempo Medio di carica&nbsp&nbsp</td>
+				<td colspan="1" width="70px" align="left" id="average_load_time" style="font-weight: bold">99</td>
+				<td colspan="1"></td>
+			</tr>
+			<tr>
+				<td colspan="2"></td>
+				<td colspan="2" width="120px" align="right">Ultimo tempo di carica&nbsp&nbsp</td>
+				<td colspan="1" width="70px" align="left" id="last_load_time" style="font-weight: bold">99</td>
+				<td colspan="1"></td>
+			</tr>
+			<tr>
+				<td colspan="6"></td>
+				<td colspan="1"><a href="settings.html"><img height="30" width="30" src="settings.png"></a></td>
+			</tr>
+
+		</table>
+		
+
+        </CENTER>
+		<br><br>
+		<center>
+		<div style="width:75%;">
+		        <canvas id="oscope_canvas"></canvas>
+		</div>
+		</center>
+	<br>
+		<br><br>
+		<center>
+		<div style="width:75%;">
+		        <canvas id="canvas"></canvas>
+		</div>
+		<div id="cmd_bulk_raw"></div>
+		</center>
+</BODY>
+</HTML>
+<script src="http://mc.digithom.it/chartjs/Chart.js">
+	</script>
+<script>
+var websock;
+var myChart;
+var myChartOscope;
+var auto_refresh = setInterval( function () { loadXMLDoc(); }, 1000);
+function resetRefreshPeriod () {
+clearInterval (auto_refresh);
+auto_refresh = setInterval( function () { loadXMLDoc(); }, 2500);
+}
+
+function cmdSourceCHG() {
+	document.getElementById("cmd_bulk_raw").innerHTML='<object type="text/html" data="cmd_src_change" ></object>';
+}
+
+function cmdSpegni() {
+	document.getElementById("cmd_bulk_raw").innerHTML='<object type="text/html" data="cmd_disable" ></object>';
+}
+
+function cmdAccendi() {
+	document.getElementById("cmd_bulk_raw").innerHTML='<object type="text/html" data="cmd_enable" ></object>';
+}
+
+function cmdCarica() {
+	document.getElementById("cmd_bulk_raw").innerHTML='<object type="text/html" data="cmd_load" ></object>';
+}
+
+function loadXMLDoc() {
+        var xmlhttp;
+
+        if (window.XMLHttpRequest) {// code for IE7+, Firefox, Chrome, Opera, Safari
+                xmlhttp=new XMLHttpRequest();
+        } else {// code for IE6, IE5
+                xmlhttp=new ActiveXObject("Microsoft.XMLHTTP");
+        }
+        xmlhttp.onreadystatechange=function() {
+		if (xmlhttp.readyState==4 && xmlhttp.status==200) {
+				var a = xmlhttp.responseText;
+				var b = JSON.parse(a);
+				document.getElementById("pressione").innerHTML = b.pressure_actual;
+				//                        document.getElementById("pressione_fir").innerHTML = b.pressure_fir;
+				document.getElementById("pmin").innerHTML = b.pressure_min;
+				document.getElementById("pmax").innerHTML = b.pressure_max;
+				document.getElementById("ptarget").innerHTML = b.pressure_target;
+				document.getElementById("p5sec").innerHTML = b.pressure_5sec;
+				document.getElementById("average_load_time").innerHTML = b.average_load_time;
+				document.getElementById("last_load_time").innerHTML = b.last_load_time;
+
+/*				myChartOscope.data.labels=[];
+				for (i = 0; i < b.oscope.length; i++) {
+					x10++;
+					if (x10 == 10) {
+						myChartOscope.data.labels.push(x10c++);
+						x10 = 0;
+					} else {
+						myChartOscope.data.labels.push("");
+					}
+				} */
+				myChartOscope.data.labels=b.oscope;
+				myChartOscope.data.datasets[0].data=b.oscope;
+				myChartOscope.update();
+
+			switch (b.selected_pump) {
+				case 0:
+					document.getElementById("sorgente").innerHTML = "Pozzo";
+					break;
+
+				case 1:
+					document.getElementById("sorgente").innerHTML = "Comune";
+					break;
+			}
+
+			switch (b.status) {
+				case 0:
+					document.getElementById("status").innerHTML = "Standby";
+					break;
+				case 1:
+					document.getElementById("status").innerHTML = "Caricamento";
+					break;
+				case 2:
+					document.getElementById("status").innerHTML = "Wait";
+					break;
+				case 3:
+					document.getElementById("status").innerHTML = "Disabilitato";
+					break;
+			}
+			switch (b.stop_reason) {
+				case 0:
+					document.getElementById("stop_reason").innerHTML = "Mai avviata"; 
+					break;
+				
+				case 1:
+					document.getElementById("stop_reason").innerHTML = "Pressione raggiunta"; 
+					break;
+				
+				case 2:
+					document.getElementById("stop_reason").innerHTML = "Timeout carica"; 
+					break;
+
+			      	default:
+					document.getElementById("stop_reason").innerHTML = "Non specificato"; 
+					break;
+
+			       
+				
+			}
+			}
+          }
+        xmlhttp.open("GET","data.json",true);
+        xmlhttp.send();
+
+//      auto_refresh = setInterval( function () { loadXMLDoc(); }, 1000);
+}
+
+
+function loadJsonChartData() {
+        var xmlhttp;
+
+        if (window.XMLHttpRequest) {// code for IE7+, Firefox, Chrome, Opera, Safari
+                xmlhttp=new XMLHttpRequest();
+        } else {// code for IE6, IE5
+                xmlhttp=new ActiveXObject("Microsoft.XMLHTTP");
+        }
+        xmlhttp.onreadystatechange=function() {
+                if (xmlhttp.readyState==4 && xmlhttp.status==200) {
+						var i;
+						var x10=0;
+						var x10c=1;
+                        var a = xmlhttp.responseText;
+                        var b = JSON.parse(a);
+//						myChart.data.labels=b.chart_data;
+
+						myChart.data.labels=[];
+						for (i = 0; i < b.chart_data.length; i++) {
+							x10++;
+							if (x10 == 10) {
+								myChart.data.labels.push(x10c++);
+								x10 = 0;
+							} else {
+								myChart.data.labels.push("");
+							}
+						}
+						myChart.data.datasets[0].data=b.chart_data;
+					//	myChart.data.datasets.forEach((dataset) => { dataset.data.push(b.chart_data[15]); });
+//						myChart.data.datasets[0].push(b.chart_data);
+						myChart.update();	
+                }
+          }
+        xmlhttp.open("GET","chart_data.json",true);
+        xmlhttp.send();
+
+}
+
+function loadJsonLoadHistory() {
+        var xmlhttp;
+
+        if (window.XMLHttpRequest) {// code for IE7+, Firefox, Chrome, Opera, Safari
+                xmlhttp=new XMLHttpRequest();
+        } else {// code for IE6, IE5
+                xmlhttp=new ActiveXObject("Microsoft.XMLHTTP");
+        }
+        xmlhttp.onreadystatechange=function() {
+                if (xmlhttp.readyState==4 && xmlhttp.status==200) {
+            var i;
+            var x10=0;
+            var x10c=1;
+                        var a = xmlhttp.responseText;
+                        var b = JSON.parse(a);
+//            myChart.data.labels=b.chart_data;
+
+            myChart.data.labels=[];
+            for (i = 0; i < b.chart_data.length; i++) {
+              x10++;
+              if (x10 == 10) {
+                myChart.data.labels.push(x10c++);
+                x10 = 0;
+              } else {
+                myChart.data.labels.push("");
+              }
+            }
+            myChart.data.datasets[0].data=b.chart_data;
+          //  myChart.data.datasets.forEach((dataset) => { dataset.data.push(b.chart_data[15]); });
+//            myChart.data.datasets[0].push(b.chart_data);
+            myChart.update(); 
+                }
+          }
+        xmlhttp.open("GET","chart_data.json",true);
+        xmlhttp.send();
+
+}
+
+window.onload = function() {
+        init();
+};
+
+function init() {
+
+var cto = document.getElementById("oscope_canvas");
+var ctx = document.getElementById("canvas");
+
+myChartOscope = new Chart(cto, {
+    type: 'line',
+    data: {
+        labels: [],
+        datasets: [{
+            label: 'Bar x 100',
+            data: [],
+            backgroundColor: [
+                'rgba(255, 99, 132, 0.2)',
+                'rgba(54, 162, 235, 0.2)',
+                'rgba(255, 206, 86, 0.2)',
+                'rgba(75, 192, 192, 0.2)',
+                'rgba(153, 102, 255, 0.2)',
+                'rgba(255, 159, 64, 0.2)'
+            ],
+            borderColor: [
+                'rgba(255,99,132,1)',
+                'rgba(54, 162, 235, 1)',
+                'rgba(255, 206, 86, 1)',
+                'rgba(75, 192, 192, 1)',
+                'rgba(153, 102, 255, 1)',
+                'rgba(255, 159, 64, 1)'
+            ],
+            borderWidth: 1
+        }]
+    },
+    options: {
+        scales: {
+            yAxes: [{
+                ticks: {
+		    suggestedMin: 0,
+		    suggestedMax: 600,
+		    min: 0,
+		    max: 600,
+                    beginAtZero:true
+                }
+            }]
+        },
+	elements: {
+		point: {
+			radius: 0
+		}
+	}
+
+    }
+});
+
+myChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: [],
+        datasets: [{
+            label: 'Bar x 100',
+            data: [],
+            backgroundColor: [
+                'rgba(255, 99, 132, 0.2)',
+                'rgba(54, 162, 235, 0.2)',
+                'rgba(255, 206, 86, 0.2)',
+                'rgba(75, 192, 192, 0.2)',
+                'rgba(153, 102, 255, 0.2)',
+                'rgba(255, 159, 64, 0.2)'
+            ],
+            borderColor: [
+                'rgba(255,99,132,1)',
+                'rgba(54, 162, 235, 1)',
+                'rgba(255, 206, 86, 1)',
+                'rgba(75, 192, 192, 1)',
+                'rgba(153, 102, 255, 1)',
+                'rgba(255, 159, 64, 1)'
+            ],
+            borderWidth: 1
+        }]
+    },
+    options: {
+        scales: {
+            yAxes: [{
+                ticks: {
+                    beginAtZero:true
+                }
+            }]
+        },
+	elements: {
+		point: {
+			radius: 0
+		}
+	}
+    }
+});
+loadJsonChartData();
+/*  websock = new WebSocket('ws://' + window.location.hostname + ':81/');
+  websock.onopen = function(evt) { console.log('websock open'); };
+  websock.onclose = function(evt) { console.log('websock close'); };
+  websock.onerror = function(evt) { console.log(evt); };
+  websock.onmessage = function(evt) {
+    console.log(evt);
+    var e = document.getElementById('ledstatus');
+    if (evt.data === 'ledon') {
+      e.style.color = 'red';
+    }
+    else if (evt.data === 'ledoff') {
+      e.style.color = 'black';
+    }
+    else {
+      console.log('unknown event');
+    }
+  };*/
+
+}
+/*
+function buttonclick(e) {
+  websock.send(e.id);
+}*/
+
+</script>

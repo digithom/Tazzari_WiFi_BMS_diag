@@ -1,0 +1,27 @@
+{
+  "global_settings": {
+    "pressure_target": 2.9
+  },
+  "pump_settings": [
+    {
+      "pump_name": "Pozzo",
+      "min_allowed_load_time": 4,
+      "max_allowed_load_time": 900,
+      "start_pressure": 240,
+      "stop_pressure": 421,
+      "min_stop_pressure": 250,
+      "max_stop_pressure": 450,
+      "delay_b4_restart": 60
+    },
+    {
+      "pump_name": "Comune",
+      "min_allowed_load_time": 4,
+      "max_allowed_load_time": 1500,
+      "start_pressure": 240,
+      "stop_pressure": 364,
+      "min_stop_pressure": 250,
+      "max_stop_pressure": 450,
+      "delay_b4_restart": 60
+    }
+  ]
+}
