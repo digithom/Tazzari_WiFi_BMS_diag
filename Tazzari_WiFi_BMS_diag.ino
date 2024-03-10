@@ -103,6 +103,9 @@ int timer_counter=0;
 bool tickOccured=false;
 bool step_change_pulse = false;
 bool wifi_connected = false;
+bool webserver_up = false;
+bool ota_up = false;
+bool udp_up = false;
 bool timezone_acquired = false;
 bool ntp_req_sent = false;
 
@@ -131,6 +134,9 @@ const int NTP_PACKET_SIZE = 48; // NTP time stamp is in the first
  
 byte packetBuffer[ NTP_PACKET_SIZE]; //buffer to hold incoming 
                                      //and outgoing packets
+network_fsm nwfsm_step;
+network_fsm nwfsm_step_old;
+bool  nwfsm_step_change;
 
 unsigned long epoch;
 unsigned long timestamp;
@@ -155,6 +161,7 @@ WebServer server(80); //Server on port 80
 WiFiUDP Udp;
 
 HTTPClient http;
+String hostname(HOSTNAME);
 
 #define CAN0_INT D2                              // Set INT to pin D2
 //#define CAN0_INT 19                              // Set INT to pin D2
@@ -638,9 +645,9 @@ void setup(void){
   Serial.begin(115200);
   Serial.println ("Get ready with a Wifi accesso on:");
   Serial.print ("SSID: ");
-  Serial.println (ssid_4);
+  Serial.println (ssid);
   Serial.print ("Password: ");
-  Serial.println (password_4);
+  Serial.println (password);
 
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
@@ -725,7 +732,14 @@ void setup(void){
 
 }
 
+/* Vecchia Network_setup
+ *  trasportata nella fsm non bloccante
+ */
+
 void network_setup () {
+  digitalWrite(LED_BUILTIN, LOW);
+}
+/*
   timezone_acquired = false;
   ntp_req_sent = false;
 
@@ -773,7 +787,7 @@ void network_setup () {
   server.on("/cmd_disable", handleCMD_Disable);
   server.on("/cmd_enable", handleCMD_Enable);
   server.on("/cmd_load", handleCMD_Load);*/
-  server.on("/cmd_restart", handleCMD_Restart);
+/*  server.on("/cmd_restart", handleCMD_Restart);
   server.onNotFound([]() {                              // If the client requests any URI
     if (!handleFileRead(server.uri()))                  // send it if it exists
       server.send(404, "text/plain", "404: Not Found"); // otherwise, respond with a 404 (Not Found) error
@@ -808,14 +822,15 @@ void network_setup () {
   ArduinoOTA.begin();
   
 }
-
+*/
 
 //==============================================================
 //                     LOOP
 //==============================================================
 void loop(void){
-  ArduinoOTA.handle();
-  server.handleClient();          //Handle client requests
+  if (ota_up) ArduinoOTA.handle();
+  if (webserver_up) server.handleClient();          //Handle client requests
+  
 //  webSocket.loop();
 //  if (tick_1s  && !timezone_acquired && (ntp_retries <= MAX_NTP_RETRIES)) {
   if (tick_1s) {
@@ -828,73 +843,75 @@ void loop(void){
         can_initialized = true;
       } else Serial.println("Error Initializing MCP2515...");
     }
-    
-    if (!timezone_acquired && (ntp_retries <= MAX_NTP_RETRIES)) {
-      if (!ntp_req_sent) {
-        Serial.println("It is time to refresh NTP time, sending ntp request ... " );
-        sendNTPpacket(timeServer);
-        ntp_retries = 0;
-        ntp_req_sent = true;
-      } else if ( Udp.parsePacket() ) {
-        Serial.println("NTP answer recieved, processing data ... " );
-        // We've received a packet, read the data from it
-        Udp.read(packetBuffer, NTP_PACKET_SIZE); // read the packet 
-                                                 // into the buffer
-        //the timestamp starts at byte 40 of the received packet 
-        // and is four bytes, or two words, long. First, 
-        // esxtract the two words:
-     
-        unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
-        unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
-        // combine the four bytes (two words) into a long integer
-        // this is NTP time (seconds since Jan 1 1900):
-        unsigned long secsSince1900 = highWord << 16 | lowWord;
-    
-    
-    
-        Serial.print("Seconds since Jan 1 1900 = " );
-        Serial.println(secsSince1900);
-     
-        // now convert NTP time into everyday time:
-        Serial.print("Unix time = ");
-        // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
-        const unsigned long seventyYears = 2208988800UL;
-        // subtract seventy years:
-    
-    //    unsigned long epoch = secsSince1900 - seventyYears;
-        epoch = CE.toLocal(secsSince1900 - seventyYears, &tcr);
-        setTime(epoch);
-        // print Unix time:
-        Serial.println(epoch);
-     
-     
-        // print the hour, minute and second:
-        Serial.print("The UTC time is ");       // UTC is the time at Greenwich 
-                                                // Meridian (GMT)
-    
-        Serial.print(hour());
-        Serial.print(":");
-        Serial.print(minute());
-        Serial.print(":");
-        Serial.print(second());
-        Serial.print("  ");
-        Serial.print(day());
-        Serial.print("/");
-        Serial.print(month());
-        Serial.print("/");
-        Serial.print(year());
-        
-        Serial.println();
-        Serial.println(now());
-                                                  
-        ntp_retries = MAX_NTP_RETRIES + 1;
-        ntp_req_sent = false;
-        timezone_acquired = true;
-      } else {
-        Serial.println("No ntp received\n");
-        ntp_retries++;
+
+    if (udp_up) {
+      if (!timezone_acquired && (ntp_retries <= MAX_NTP_RETRIES)) {
+        if (!ntp_req_sent) {
+          Serial.println("It is time to refresh NTP time, sending ntp request ... " );
+          sendNTPpacket(timeServer);
+          ntp_retries = 0;
+          ntp_req_sent = true;
+        } else if ( Udp.parsePacket() ) {
+          Serial.println("NTP answer recieved, processing data ... " );
+          // We've received a packet, read the data from it
+          Udp.read(packetBuffer, NTP_PACKET_SIZE); // read the packet 
+                                                   // into the buffer
+          //the timestamp starts at byte 40 of the received packet 
+          // and is four bytes, or two words, long. First, 
+          // esxtract the two words:
+       
+          unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
+          unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
+          // combine the four bytes (two words) into a long integer
+          // this is NTP time (seconds since Jan 1 1900):
+          unsigned long secsSince1900 = highWord << 16 | lowWord;
+      
+      
+      
+          Serial.print("Seconds since Jan 1 1900 = " );
+          Serial.println(secsSince1900);
+       
+          // now convert NTP time into everyday time:
+          Serial.print("Unix time = ");
+          // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
+          const unsigned long seventyYears = 2208988800UL;
+          // subtract seventy years:
+      
+      //    unsigned long epoch = secsSince1900 - seventyYears;
+          epoch = CE.toLocal(secsSince1900 - seventyYears, &tcr);
+          setTime(epoch);
+          // print Unix time:
+          Serial.println(epoch);
+       
+       
+          // print the hour, minute and second:
+          Serial.print("The UTC time is ");       // UTC is the time at Greenwich 
+                                                  // Meridian (GMT)
+      
+          Serial.print(hour());
+          Serial.print(":");
+          Serial.print(minute());
+          Serial.print(":");
+          Serial.print(second());
+          Serial.print("  ");
+          Serial.print(day());
+          Serial.print("/");
+          Serial.print(month());
+          Serial.print("/");
+          Serial.print(year());
+          
+          Serial.println();
+          Serial.println(now());
+                                                    
+          ntp_retries = MAX_NTP_RETRIES + 1;
+          ntp_req_sent = false;
+          timezone_acquired = true;
+        } else {
+          Serial.println("No ntp received\n");
+          ntp_retries++;
+        }
+        timezone_countdown_acquire = 0;
       }
-      timezone_countdown_acquire = 0;
     }
   }
   /*  
@@ -911,7 +928,7 @@ void loop(void){
  }
    */  
   if (!digitalRead(CAN0_INT)) telegramReceived = true;
-  if (telegramReceived) {
+  if (can_initialized && telegramReceived) {
     telegramReceived = false;
     telegram_counter++;
     
@@ -953,18 +970,119 @@ void loop(void){
 // Every 1/10 second
   if (tickOccured) {
     timestamp = now(); 
-    tickOccured = false;
     sprintf (str_time, "%02d:%02d:%02d",hour(),minute(),second());
     sprintf (str_date, "%d/%d/%d",day(),month(),year());
     sprintf (str_date_mysql, "%d/%d/%d",year(),month(),day());
-    if (WiFi.status() != WL_CONNECTED) {
-      Serial.println ("Not Connected\nCalling Network Setup ...\n");
-      network_setup();
-    }
 
     for (int i=0; i<24 ; i++) { //Calculate slow floating value of each cell by a strong fir filter
-      Vcelle[i].v_filtered = ((Vcelle[i].v_filtered * 10000) + (float)Vcelle[i].v/1000) / 10001.0L;
-      
+      Vcelle[i].v_filtered = ((Vcelle[i].v_filtered * 10000) + (float)Vcelle[i].v/1000) / 10001.0L;    
     }
   }
+
+  switch (nwfsm_step) {
+    case NWFSM_SETUP_WIFI:
+      timezone_acquired = false;
+      ntp_req_sent = false;
+    
+      Serial.print("Chip ID: 0x");
+      Serial.println(ESP.getChipId(), HEX);
+    
+      // Set Hostname.
+      WiFi.hostname(hostname);
+    
+      // Print hostname.
+      Serial.println("Hostname: " + hostname);
+//      Serial.println(WiFi.hostname());
+      WiFi.disconnect();
+      WiFi.mode (WIFI_STA);
+      WiFiMulti.addAP(ssid, password);
+      WiFiMulti.addAP(ssid_1, password_1);
+      WiFiMulti.addAP(ssid_2, password_2);
+      WiFiMulti.addAP(ssid_3, password_3);
+      WiFiMulti.addAP(ssid_4, password_4);
+      Serial.println("");
+      nwfsm_step = NWFSM_WAIT_CONNECTION;
+      break;
+
+    case NWFSM_WAIT_CONNECTION:
+      if (WiFiMulti.run() == WL_CONNECTED) {
+          //If connection successful show IP address in serial monitor
+        Serial.println("");
+        Serial.print("Connected to ");
+        Serial.println(ssid);
+        Serial.print("IP address: ");
+        Serial.println(WiFi.localIP());  //IP address assigned to your ESP
+        wifi_connected = true;
+        digitalWrite(LED_BUILTIN, LOW);
+        Serial.println("HTTP server started");
+        Serial.println("WebSocket server started");
+
+        nwfsm_step = NWFSM_SETUP_WEBSERVER;
+      }
+      break;
+
+    case NWFSM_SETUP_WEBSERVER:
+      server.on("/bms_data.json", handleJSONLiveData);
+      server.on("/index2.html", handleHTMLBasicData);
+      /*server.on("/send_test", handleSendTestTelegram);
+      server.on("/cmd_disable", handleCMD_Disable);
+      server.on("/cmd_enable", handleCMD_Enable);
+      server.on("/cmd_load", handleCMD_Load);*/
+      server.on("/cmd_restart", handleCMD_Restart);
+      server.onNotFound([]() {                              // If the client requests any URI
+        if (!handleFileRead(server.uri()))                  // send it if it exists
+          server.send(404, "text/plain", "404: Not Found"); // otherwise, respond with a 404 (Not Found) error
+      });
+      server.begin();                  //Start server
+      webserver_up = true;
+      nwfsm_step = NWFSM_SETUP_OTA;
+      break;
+
+    case NWFSM_SETUP_OTA:
+      ArduinoOTA.setHostname((const char *)hostname.c_str());
+      ArduinoOTA.onStart([]() {
+        Serial.println("Start");
+      });
+      ArduinoOTA.onEnd([]() {
+        Serial.println("\nEnd");
+        ESP.restart();
+      });
+      ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+        Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+      });
+      ArduinoOTA.onError([](ota_error_t error) {
+        Serial.printf("Error[%u]: ", error);
+        if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+        else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+        else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+        else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+        else if (error == OTA_END_ERROR) Serial.println("End Failed");
+      });
+      ArduinoOTA.begin();
+      Serial.println("OTA service up");
+      ota_up = true;
+      nwfsm_step = NWFSM_SETUP_NTP_UDP;
+      break;
+
+    case NWFSM_SETUP_NTP_UDP:
+      Udp.begin(8888);
+      Serial.println("UDP for NTP up");
+      udp_up = true;
+      nwfsm_step = NWFSM_RUNNING;
+      break;
+
+    case NWFSM_RUNNING:
+      if (tickOccured && WiFiMulti.run() != WL_CONNECTED) {
+        ota_up = false;
+        udp_up = false;
+        webserver_up = false;
+        wifi_connected = false;
+        digitalWrite(LED_BUILTIN, HIGH);
+        nwfsm_step = NWFSM_SETUP_WIFI;
+      }
+      break;
+
+    
+  }
+  tickOccured = false;
 }

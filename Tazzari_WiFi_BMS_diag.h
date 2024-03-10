@@ -24,5 +24,13 @@ struct cella {
   float current_at_vmin;
 };
 
+enum network_fsm {
+  NWFSM_SETUP_WIFI,
+  NWFSM_WAIT_CONNECTION,
+  NWFSM_SETUP_WEBSERVER,
+  NWFSM_SETUP_OTA,
+  NWFSM_SETUP_NTP_UDP,
+  NWFSM_RUNNING
+};
 
 
