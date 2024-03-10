@@ -37,7 +37,7 @@
 #include <mcp_can.h>
 //#include <mcp2515.h>
 
-//#define DEMO 1
+#define DEMO 1
 
 
 #define MAX_NTP_RETRIES 5
@@ -63,10 +63,10 @@
 
 const char* ssid = "TazzariBMS";
 const char* password = "digithom2024";
-const char* ssid_1 = "thombeamGround0";
-const char* password_1 = "thombeammamma";
-const char* ssid_2 = "thombeam";
-const char* password_2 = "thombeamcentinarola";
+const char* ssid_1 = "thombeam";
+const char* password_1 = "thombeamcentinarola";
+const char* ssid_2 = "thombeamGround0";
+const char* password_2 = "thombeammamma";
 const char* ssid_3 = "DoryROD";
 const char* password_3 = "digithom2020";
 const char* ssid_4 = "thombeamEXTD_2";
@@ -528,27 +528,31 @@ void handleJSONLiveData () {
     s+=", ";
   }
   s+=String((float)Vcelle[23].v/1000.f, 3);
-  
+  s+="]";
+   
   s+=", \"vcell_filtered\":[";
   for (int i=0; i<23; i++) {
     s+=String((float)Vcelle[i].v_filtered, 3);
     s+=", ";
   }
   s+=String((float)Vcelle[23].v_filtered, 3);
-
+  s+="]";
+ 
   s+=", \"vcell_min\":[";
   for (int i=0; i<23; i++) {
     s+=String((float)Vcelle[i].vmin, 3);
     s+=", ";
   }
   s+=String((float)Vcelle[23].vmin, 3);
-
+  s+="]";
+ 
   s+=", \"vcell_max\":[";
   for (int i=0; i<23; i++) {
     s+=String((float)Vcelle[i].vmax, 3);
     s+=", ";
   }
   s+=String((float)Vcelle[23].vmax, 3);
+  s+="]";
 
   s+=", \"vcell_aatmax\":[";
   for (int i=0; i<23; i++) {
@@ -556,7 +560,8 @@ void handleJSONLiveData () {
     s+=", ";
   }
   s+=String((float)Vcelle[23].current_at_vmax, 3);
-
+  s+="]";
+  
   s+=", \"vcell_aatmin\":[";
   for (int i=0; i<23; i++) {
     s+=String((float)Vcelle[i].current_at_vmin, 3);
@@ -682,7 +687,7 @@ void setup(void){
 
   SPIFFS.begin();
 
-  network_setup();
+//  network_setup();
 
 #ifdef DEMO
   BMScurrent = -10.8;
@@ -736,9 +741,9 @@ void setup(void){
  *  trasportata nella fsm non bloccante
  */
 
-void network_setup () {
-  digitalWrite(LED_BUILTIN, LOW);
-}
+/*void network_setup () {
+  digitalWrite(LED_BUILTIN, HIGH);
+}*/
 /*
   timezone_acquired = false;
   ntp_req_sent = false;
