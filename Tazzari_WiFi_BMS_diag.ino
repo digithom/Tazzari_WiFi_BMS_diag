@@ -3,10 +3,12 @@
 #ifdef ESP8266
   #include <hspi_slave.h>
   #include <SPISlave.h>
+//  #include <WiFi.h>
   #include <ESP8266WiFiMulti.h>
 //#include <WebSocketsServer.h>
   #include <ESP8266WebServer.h>
   #include <ESP8266HTTPClient.h>
+  #include <ESP8266httpUpdate.h>
   #include <ESP8266mDNS.h>
   extern "C" {
   #include "user_interface.h"
@@ -22,7 +24,7 @@
   #include <WebServer.h>
   #include <HTTPClient.h>
   #include <Ticker.h>
-  #include "FS.h"
+//  #include "FS.h"
   #include "SPIFFS.h"
 #endif
 
@@ -72,6 +74,8 @@ const char* password_3 = "digithom2020";
 const char* ssid_4 = "thombeamEXTD_2";
 const char* password_4 = "thombeamcentinarola";
 
+const char* spiffs_file_list[] = {"/index.html","/settings.html","/settings.png"};
+const char* fwImageURL = "http://mc.digithom.it/fw/Tazzari_WiFi_BMS_diag/Tazzari_WiFi_BMS_diag.ino.bin";
 
 char str_time[10];
 char str_date[12];
@@ -171,6 +175,99 @@ String hostname(HOSTNAME);
 MCP_CAN CAN0(&SPI, D8);                               // Set CS to pin D8
 //MCP2515 CAN0();
 
+void downloadFile(char * filename) {
+  HTTPClient http;
+
+  // Indirizzo del file da scaricare
+  String url = "http://mc.digithom.it/fw/Tazzari_WiFi_BMS_diag/html" + String(filename);
+
+  // Inizia la richiesta HTTP
+  WiFiClient client;
+  http.begin(client, url);
+
+  // Esegui la richiesta e controlla lo stato
+  int httpCode = http.GET();
+  if (httpCode > 0) {
+    if (httpCode == HTTP_CODE_OK) {
+      // File scaricato con successo
+      Serial.println("File scaricato con successo");
+//      server.send(200, "text/html", "File Downloaded");
+
+      // Apri il file nello SPIFFS
+//      File file = SPIFFS.open("/file.txt", "w");
+      File file = SPIFFS.open(filename, "w");
+      if (!file) {
+//        server.send(200, "text/html", "Unable to write file to spiffs");
+        Serial.println("Impossibile aprire il file");
+        return;
+      }
+
+      // Scrivi il contenuto del file scaricato nel file nello SPIFFS
+      file.print(http.getString());
+      file.close();
+    }
+  } else {
+    Serial.printf("[HTTP] GET request failed, error: %s\n", http.errorToString(httpCode).c_str());
+//    server.send(200, "text/html", "Unable to get file");
+  }
+
+  // Chiudi la connessione HTTP
+  http.end();
+}
+
+void handleSpiffsUpdate() {
+  int n_items;  
+  String htmltxt = "Downloaded files ";
+
+  n_items = sizeof(spiffs_file_list) / sizeof (char *);
+  Serial.print ("Files downloaded ");
+  Serial.println (n_items);
+  for (int i=0; i<n_items; i++) {
+  
+    downloadFile((char *)spiffs_file_list[i]);
+  }
+  htmltxt += n_items;
+  server.send(200, "text/html", htmltxt);
+}
+
+void InstallUpdates() {
+  Serial.println( "OTA Update Request Received" );
+  Serial.print( "Firmware URL: " );
+  Serial.println( fwImageURL );
+
+  WiFiClient client;
+//  HTTPClient httpClient;
+//  httpClient.begin( fwImageURL );
+//  int httpCode = httpClient.GET();
+//  if( httpCode == 200 ) {
+    
+    Serial.println( "Update file found, starting update" );
+    // Set virtual pin to 1023 so the LED widget in the Blynk app lights up to show that the upgrade started
+//    Blynk.virtualWrite(V30, 1023);
+
+//    t_httpUpdate_return ret = ESPhttpUpdate.update( fwImageURL );  // ESP32 Version
+//    t_httpUpdate_return ret = ESPhttpUpdate.update(WiFiMulti, fwImageURL);
+    t_httpUpdate_return ret = ESPhttpUpdate.update(client, "http://mc.digithom.it/fw/Tazzari_WiFi_BMS_diag/Tazzari_WiFi_BMS_diag.ino.bin");
+
+
+    switch (ret) {
+      case HTTP_UPDATE_FAILED:
+        Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s\n", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
+        Serial.println(F("Retry in 10secs!"));
+//        delay(10000); // Wait 10secs
+        break;
+ 
+      case HTTP_UPDATE_NO_UPDATES:
+        Serial.println("HTTP_UPDATE_NO_UPDATES");
+        break;
+ 
+      case HTTP_UPDATE_OK:
+        Serial.println("HTTP_UPDATE_OK");
+        delay(1000); // Wait a second and restart
+        ESP.restart();
+        break;
+    }
+}
 
 bool handleFileRead(String path) { // send the right file to the client (if it exists)
   if (path.endsWith("/")) path += "index.html";         // If a folder is requested, send the index file
@@ -616,7 +713,8 @@ void sendLog () {
 */
 
 // send an NTP request to the time server at the given address
-unsigned long sendNTPpacket(char* address) {
+void sendNTPpacket(char* address) {
+//unsigned long sendNTPpacket(char* address) {
   // set all bytes in the buffer to 0
   memset(packetBuffer, 0, NTP_PACKET_SIZE);
   // Initialize values needed to form NTP request
@@ -1029,6 +1127,8 @@ void loop(void){
     case NWFSM_SETUP_WEBSERVER:
       server.on("/bms_data.json", handleJSONLiveData);
       server.on("/index2.html", handleHTMLBasicData);
+      server.on("/spiffsupdate.html",handleSpiffsUpdate);
+      server.on("/fwupdate.html",InstallUpdates);
       /*server.on("/send_test", handleSendTestTelegram);
       server.on("/cmd_disable", handleCMD_Disable);
       server.on("/cmd_enable", handleCMD_Enable);
@@ -1065,6 +1165,21 @@ void loop(void){
       });
       ArduinoOTA.begin();
       Serial.println("OTA service up");
+/*
+      ESPhttpUpdate.onStart([]() {
+        Serial.println("CALLBACK:  HTTP update process started");
+      });
+      ESPhttpUpdate.onEnd([]() {
+        Serial.println("CALLBACK:  HTTP update process finished");
+      });
+      ESPhttpUpdate.onProgress([](int cur, int total) {
+        Serial.printf("CALLBACK:  HTTP update process at %d of %d bytes...\n", cur, total);
+      });
+      ESPhttpUpdate.onError([](int err) {
+        Serial.printf("CALLBACK:  HTTP update fatal error code %d\n", err);
+      });
+      ESPhttpUpdate.rebootOnUpdate(true); // remove automatic update
+*/
       ota_up = true;
       nwfsm_step = NWFSM_SETUP_NTP_UDP;
       break;
